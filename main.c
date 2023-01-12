@@ -162,6 +162,7 @@ struct State *state(int c, struct State *out, struct State *out1)
         st->c = c;
         st->out = out;
         st->out1 = out1;
+        st->last_list = 0;
 
         return st;
 }
@@ -174,7 +175,7 @@ struct State *infix_to_nfa(char *postfix)
         char *p;
         struct Frag stack[1000], *stackp, e1, e2, e;
         uint32_t stack_size = 0;
-        bool alternate_index[1000];
+        bool alternate_index[1000] = {false};
 
         #define push(s) *stackp++ = s; stack_size++
         #define pop()   *--stackp; stack_size--
@@ -202,6 +203,32 @@ struct State *infix_to_nfa(char *postfix)
                                 }
                                 push(*frag(prev.start, end.out));
                         } break;
+                        case '[':
+                        {
+                                struct State *st = state(*p, NULL, NULL);
+                                struct Ptrlist *lst = list1(&st->out);
+                                struct Frag *fr = frag(st, lst);
+                                push(*fr);
+
+                                if (*(p+1) == '^') {
+                                        char group_chars[127] = {'\0'};
+                                        p += 2;
+                                        for (; *p != ']'; p++)
+                                                group_chars[*p] = *p;
+
+                                        for (size_t i = 33; i < 127; i++) {
+                                                if (i == '[' || i == ']' || i == '^' || i == '|' || i == '(' || i == ')' || i == '*' || i == '+' || i == '?' || i == '.')
+                                                        continue;
+                                                if (group_chars[i] == '\0') {
+                                                        struct State *st = state(i, NULL, NULL);
+                                                        struct Ptrlist *lst = list1(&st->out);
+                                                        struct Frag *fr = frag(st, lst);
+                                                        push(*fr);
+                                                }
+                                        }
+                                }
+                                p--;
+                        } break;
                         case ']':
                         {
                                 e2 = pop();
@@ -214,20 +241,10 @@ struct State *infix_to_nfa(char *postfix)
                                         exit(EXIT_FAILURE);
                                 }
 
-                                //if (e2.start->c == '^') {
-                                //        st = e1.start;
-                                //        e2 = pop();
-
-                                //        if (e1.start->c == '[') {
-                                //                fprintf(stderr, "Group needs characters. Invalid regex.");
-                                //                exit(EXIT_FAILURE);
-                                //        }
-
-                                //}
-
+                                struct Ptrlist *lst;
                                 while (e1.start->c != '[') {
                                         st = state(Split, e1.start, st);
-                                        struct Ptrlist *lst = outs;
+                                        lst = outs;
                                         outs = append(e1.out, outs);
                                         free(lst->lst);
                                         free(lst);
@@ -413,19 +430,71 @@ int match(struct DFAState *start, char *s)
         return is_match(&d->lst);
 }
 
+int match_at(struct State *start, char *s, uint32_t pos)
+{
+        struct State *state = start;
+
+        for (size_t j = 0; j < pos; j++) {
+                if (start->c == Split) {
+                        if (match_at(start->out, s, pos))
+                                return 1;
+                        if (match_at(start->out1, s, pos))
+                                return 1;
+                        return 0;
+                }
+                state = state->out;
+        }
+                
+
+        if (state->c == *s)
+                return 1;
+        
+        return 0;
+}
+
+//int match_at(struct DFAState *start, char *s, uint32_t pos)
+//{
+//        for (size_t i = 0; i < start->lst.size; i++) {
+//                struct State *state = start->lst.lst[i];
+//
+//                for (size_t j = 0; j < pos; j++)
+//                        state = state->out;
+//
+//                if (state->c == *s)
+//                        return 1;
+//        }
+//        
+//        return 0;
+//}
+
 struct DFAState *start_dfa_state(struct State *start)
 {
 	return dfa_state(start_list(start, &l1));
 }
 
-
+// Split in group (e|f) does not work. I think it reads '|' as a regular character
 int main (int argc, char *argv[])
 {
-        l1.lst = malloc(16 * sizeof(struct State*));
+        // int size;
+        // scanf("%d", &size);
 
-        struct State *nfa = infix_to_nfa("(Bocchi the Rock) (S2)? ?- (24)");
+        // char *rows[size];
+        // for (int i = 0; i < size; i++)
+        //         scanf("%s", rows[i]);
+
+        // char *columns[size];
+        // for (int i = 0; i < size; i++)
+        //         scanf("%s", columns[i]);
+
+
+        l1.lst = malloc(64 * sizeof(struct State*));
+
+        struct State *nfa = infix_to_nfa("[^PLEASE]+");
         struct DFAState *dfa = start_dfa_state(nfa);
-        printf("%d\n", match(dfa, "Bocchi the Rock S2 - 24"));
+
+        printf("%d\n", match(dfa, "VKJHKJHIUY"));
+
+        //printf("%d\n", match_at(nfa, "f", 1));
 
         free(l1.lst);
 
