@@ -211,7 +211,6 @@ struct State *infix_to_nfa(char *postfix)
                                         for (; *p != ']'; p++)
                                                 group_chars[*p] = *p;
 
-                                        //for (size_t i = 33; i < 127; i++) {
                                         for (size_t i = 65; i < 91; i++) {      // Only upper case characters seem to be necessary to solve the puzzles.
                                                 if (i == '[' || i == ']' || i == '^' || i == '|' || i == '(' || i == ')' || i == '*' || i == '+' || i == '?' || i == '.')
                                                         continue;
@@ -435,86 +434,120 @@ int match(struct DFAState *start, char *s)
         return is_match(&d->lst);
 }
 
-void create_dfa_path(struct DFAState *start)
-{
-        struct DFAState *d, *next;
-        d = start;
-        for (size_t i = 0; i < 256; i++) {
-                if ((next = d->next[i]) == NULL)
-                        next = next_state(d, i);
-                d = next;
-        }
-}
-
 int match_at(struct DFAState *start, char c, int pos)
 {
         if (pos == 0) {
                 struct List *clist = &start->lst;
                 struct State *s;
+                char accept_char;
                 for (size_t i = 0; i < clist->size; i++) {
-                        s = clist->lst[i];
-                        if (s->c == c)
+                        accept_char = clist->lst[i]->c;
+                        if (accept_char == c)
                                 return 1;
                 }
                 return 0;
         }
                 
         struct List clist = start->lst;
+        char accept_char;
         for (size_t i = 0; i < clist.size; i++) {
-                if (start->next[clist.lst[i]->c] == NULL)
-                        start->next[clist.lst[i]->c] = next_state(start, clist.lst[i]->c);
-                if (start->next[clist.lst[i]->c] != NULL) {
-                        return match_at(start->next[clist.lst[i]->c], c, pos - 1);
-                }
+                accept_char = clist.lst[i]->c;
+
+                if (start->next[accept_char] == NULL)
+                        start->next[accept_char] = next_state(start, accept_char);
+
+                if (start->next[accept_char] != NULL)
+                        return match_at(start->next[accept_char], c, pos - 1);
         }
 
         return 0;
 }
 
-// int match_at(struct State *start, char s, int pos)
-// {
-//         struct State *state = start;
-//         while (pos > -1) {
-//                 if (start->out == NULL)
-//                         return 0;
-//                 printf("nextptr: %p\n", state->out);
-
-//                 if (state->c == Split) {
-//                         return (match_at(state->out, s, pos - (state->out < state))
-//                                 || match_at(state->out1, s, pos));
-//                 }
-                                
-//                 state = state->out;
-//                 pos--;
-//         }
-
-//         if (state->c == Split)
-//                 state = state->out;
-
-//         if (state->c == s)
-//                 return 1;
-        
-//         return 0;
-// }
-
-// int match_at(struct DFAState *start, char s, uint32_t pos)
-// {
-//         for (size_t i = 0; i < start->lst.size; i++) {
-//                 struct State *state = start->lst.lst[i];
-
-//                 for (size_t j = 0; j < pos; j++)
-//                         state = state->out;
-
-//                 if (state->c == s)
-//                         return 1;
-//         }
-
-//         return 0;
-// }
-
 struct DFAState *start_dfa_state(struct State *start)
 {
 	return dfa_state(start_list(start, &l1));
+}
+
+int solve(uint32_t size, char **rows, char **columns, char **solution)
+{
+        //scanf("%d", &size);
+
+        struct DFAState row_states[size];
+        memset(row_states, 0, sizeof(row_states[0]) * size);
+        struct DFAState column_states[size];
+        memset(column_states, 0, sizeof(column_states[0]) * size);
+
+        struct DFAState *row_dfas[size];
+        struct DFAState *column_dfas[size];
+
+        for (int i = 0; i < size; i++) 
+                row_dfas[i] = start_dfa_state(infix_to_nfa(rows[i]));
+                
+        for (int i = 0; i < size; i++)
+                column_dfas[i] = start_dfa_state(infix_to_nfa(columns[i]));
+
+
+        uint32_t start = 65;
+        uint32_t end = 91;
+
+        *solution = malloc(size * size);
+        char *result = *solution;
+        memset(result, start, size * size);
+
+        for (size_t i = 0; i < size * size; i++) {       // Go through cells
+                int r = i / size;
+                int c = i % size;
+
+                bool cell_solved = false;
+                for (size_t z = result[i] + 1; z < end; z++) {
+                        char rune = z;
+                        if (match_at(row_dfas[r], z, c) && match_at(column_dfas[c], z, r)) {
+                                result[i] = rune;
+                                cell_solved = true;
+
+                                // Check that the whole regex matches
+                                if (c == size - 1) {    // end of row
+                                        char row[(i+1) - (r*size)];
+                                        memcpy(row, &result[r*size], size);
+                                        
+                                        if (match(row_dfas[r], row)) {
+                                                cell_solved = true;
+                                        } else {
+                                                cell_solved = false;
+                                                continue;
+                                        }
+                                }
+
+                                if (r == size - 1) {    // end of column
+                                        char column[(i+1) - (c*size)];
+
+                                        for (size_t j = 0; j < size; j++) {
+                                                column[j] = result[j*size+c];
+                                        }
+                                        
+                                        if (match(column_dfas[c], column)) {
+                                                cell_solved = true;
+                                        } else {
+                                                cell_solved = false;
+                                                continue;
+                                        }
+                                }
+                        }
+                        if (cell_solved) {
+                                break;
+                        }
+                }
+                if (!cell_solved) {
+                        result[i] = start;
+                        i--;
+                        if (i < 0)
+                                return 0;
+                } else {
+                        i++;
+                }
+        }
+
+        return 1;
 }
 
 // Split in group (e|f) does not work. I think it reads '|' as a regular character
@@ -523,62 +556,17 @@ int main (int argc, char *argv[])
         l1.lst = malloc(64 * sizeof(struct State*));
 
         int size = 2;
-        //scanf("%d", &size);
+        char *rows[] = {"[AB]*", "CA|AB"};
+        char *columns[] = {"BC|AA", "A+"};
 
-        char board[size][size];
-        char rows[][100] = {"HE|LL|O+", "[PLEASE]+"};
-        char columns[][100] = {"[^SPEAK]+", "EP|IP|EF"};
+        char *solution;
+        solve(size, rows, columns, &solution);
 
-        struct DFAState *row_nfas[size];
-        struct DFAState *column_nfas[size];
-        
-        for (int i = 0; i < size; i++)  {
-                //scanf("%s", rows[i]);
-                row_nfas[i] = start_dfa_state(infix_to_nfa(rows[i]));
-        }
-                
-
-        for (int i = 0; i < size; i++) {
-                //scanf("%s", columns[i]);
-                column_nfas[i] = start_dfa_state(infix_to_nfa(columns[i]));
-        }
-
-        // printf("Row solves: %d\n", match_at(row_nfas[1], 'S', 0));
-        // printf("startptr: %p\n", column_nfas[0]);
-        // printf("Column solves: %d\n", match_at(column_nfas[0], 'S', 1));
+        printf("%s\n", solution);
 
 
-        for (size_t i = 0; i < size; i++)       // Go through all rows
-        {
-                for (size_t j = 0; j < size; j++)       // Go through all columns
-                {
-                        for (size_t z = 65; z < 91; z++)        // Go through all uppercase characters (EN)
-                        {
-                                if (match_at(row_nfas[i], z, j) && match_at(column_nfas[j], z, i)) {
-                                        board[i][j] = z;
-                                        printf("x: %d y: %d SOLUTION: %c\n", j, i, z);
-                                        break;
-                                }
-                        }
-                }
-                
-        }
-        
-
-        
-        
-
-        // l1.lst = malloc(64 * sizeof(struct State*));
-
-               //struct State *nfa = infix_to_nfa("[^SPEAK]+");
-        
-        //struct DFAState *dfa = start_dfa_state(nfa);
-
-        // printf("%d\n", match(dfa, "VKJHKJHIUY"));
-
-        //create_dfa_path(dfa);
-               //printf("%d\n", match_at(dfa, 'H', 2));
-
+        // Cleanup
+        free(solution);
         free(l1.lst);
 
         return 0;
