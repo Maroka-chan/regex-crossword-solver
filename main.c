@@ -23,7 +23,7 @@ union Ptrlist
 };
 
 struct List {
-        struct State **lst;
+        struct State **states;
         uint32_t size;
 };
 
@@ -151,13 +151,17 @@ struct Frag frag(struct State *start, union Ptrlist *out)
         return fr;
 }
 
+uint32_t state_count;
 struct State *state(int c, struct State *out, struct State *out1)
 {
-        struct State *st = malloc(sizeof(struct State));
+        struct State *st;
+
+        state_count++;
+        st = malloc(sizeof(*st));
+        st->last_list = 0;
         st->c = c;
         st->out = out;
         st->out1 = out1;
-        st->last_list = 0;
 
         return st;
 }
@@ -169,6 +173,8 @@ struct State *infix_to_nfa(char *postfix)
 {
         char *p;
         struct Frag stack[1000], *stackp, e1, e2, e;
+        struct State *st;
+
         uint32_t stack_size = 0;
         bool alternate_index[1000] = {false};
 
@@ -180,30 +186,26 @@ struct State *infix_to_nfa(char *postfix)
                 switch (*p) {
                         default:
                         {
-                                struct State *st = state(*p, NULL, NULL);
-                                union Ptrlist *lst = list1(&st->out);
-                                struct Frag fr = frag(st, lst);
-                                push(fr);
+                                st = state(*p, NULL, NULL);
+                                push(frag(st, list1(&st->out)));
                                 
                         } break;
                         case ')':
                         {
-                                struct Frag end = pop();
-                                struct Frag start = pop();
-                                struct Frag prev = end;
-                                while (start.start->c != '(') {
-                                        patch(start.out, prev.start);
-                                        prev = start;
-                                        start = pop();
+                                e2 = pop();
+                                e1 = pop();
+                                e = e2;
+                                while (e1.start->c != '(') {
+                                        patch(e1.out, e.start);
+                                        e = e1;
+                                        e1 = pop();
                                 }
-                                push(frag(prev.start, end.out));
+                                push(frag(e.start, e2.out));
                         } break;
                         case '[':
                         {
-                                struct State *st = state(*p, NULL, NULL);
-                                union Ptrlist *lst = list1(&st->out);
-                                struct Frag fr = frag(st, lst);
-                                push(fr);
+                                st = state(*p, NULL, NULL);
+                                push(frag(st, list1(&st->out)));
 
                                 if (*(p+1) == '^') {
                                         char group_chars[127] = {'\0'};
@@ -215,10 +217,8 @@ struct State *infix_to_nfa(char *postfix)
                                                 if (i == '[' || i == ']' || i == '^' || i == '|' || i == '(' || i == ')' || i == '*' || i == '+' || i == '?' || i == '.')
                                                         continue;
                                                 if (group_chars[i] == '\0') {
-                                                        struct State *st = state(i, NULL, NULL);
-                                                        union Ptrlist *lst = list1(&st->out);
-                                                        struct Frag fr = frag(st, lst);
-                                                        push(fr);
+                                                        st = state(i, NULL, NULL);
+                                                        push(frag(st, list1(&st->out)));
                                                 }
                                         }
                                         p--;
@@ -236,10 +236,8 @@ struct State *infix_to_nfa(char *postfix)
                                         exit(EXIT_FAILURE);
                                 }
 
-                                union Ptrlist *lst;
                                 while (e1.start->c != '[') {
                                         split_state = state(Split, e1.start, split_state);
-                                        lst = outs;
                                         outs = append(e1.out, outs);
                                         e1 = pop();
                                 }
@@ -248,25 +246,22 @@ struct State *infix_to_nfa(char *postfix)
                         case '?':
                         {
                                 e = pop();
-                                struct State *split_state = state(Split, e.start, NULL);
-                                union Ptrlist *lst = list1(&split_state->out1);
-                                push(frag(split_state, append(e.out, lst)));
+                                st = state(Split, e.start, NULL);
+                                push(frag(st, append(e.out, list1(&st->out1))));
                         } break;
                         case '*':
                         {
                                 e = pop();
-                                struct State *split_state = state(Split, e.start, NULL);
-                                patch(e.out, split_state);
-                                union Ptrlist *lst = list1(&split_state->out1);
-                                push(frag(split_state, lst));
+                                st = state(Split, e.start, NULL);
+                                patch(e.out, st);
+                                push(frag(st, list1(&st->out1)));
                         } break;
                         case '+':
                         {
                                 e = pop();
-                                struct State *split_state = state(Split, e.start, NULL);
-                                patch(e.out, split_state);
-                                union Ptrlist *lst = list1(&split_state->out1);
-                                push(frag(e.start, lst));
+                                st = state(Split, e.start, NULL);
+                                patch(e.out, st);
+                                push(frag(e.start, list1(&st->out1)));
                         } break;
                 }
         }
@@ -299,7 +294,7 @@ struct State *infix_to_nfa(char *postfix)
         while (stack_size > 1) {       // Split the fragments.
                 e2 = pop();
                 e1 = pop();
-                struct State *st = state(Split, e1.start, e2.start);
+                st = state(Split, e1.start, e2.start);
                 push(frag(st, append(e1.out, e2.out)));
         }
         
@@ -320,13 +315,13 @@ void add_state(struct List *l, struct State *s)
                 add_state(l, s->out1);
                 return;
         }
-        l->lst[l->size++] = s;
+        l->states[l->size++] = s;
 }
 
 struct List *start_list(struct State *state, struct List *lst)
 {
-        listid++;
         lst->size = 0;
+        listid++;
         add_state(lst, state);
         return lst;
 }
@@ -340,9 +335,9 @@ static int listcmp(struct List *l1, struct List *l2)
 	if(l1->size > l2->size)
 		return 1;
 	for(i=0; i < l1->size; i++)
-		if(l1->lst[i] < l2->lst[i])
+		if(l1->states[i] < l2->states[i])
 			return -1;
-		else if(l1->lst[i] > l2->lst[i])
+		else if(l1->states[i] > l2->states[i])
 			return 1;
 	return 0;
 }
@@ -362,7 +357,7 @@ struct DFAState *dfa_state(struct List *l)
 	int i;
 	struct DFAState **dp, *d;
 
-	qsort(l->lst, l->size, sizeof l->lst[0], ptrcmp);
+	qsort(l->states, l->size, sizeof l->states[0], ptrcmp);
 
 	/* look in tree for existing DFAState */
 	dp = &all_dfa_states;
@@ -377,10 +372,10 @@ struct DFAState *dfa_state(struct List *l)
 	}
 	
 	/* allocate, initialize new DFAState */
-	d = malloc(sizeof *d + l->size * sizeof l->lst[0]);
+	d = malloc(sizeof *d + l->size * sizeof l->states[0]);
 	memset(d, 0, sizeof *d);
-	d->lst.lst = (struct State**)(d+1);
-	memmove(d->lst.lst, l->lst, l->size * sizeof l->lst[0]);
+	d->lst.states = (struct State**)(d+1);
+	memmove(d->lst.states, l->states, l->size * sizeof l->states[0]);
 	d->lst.size = l->size;
 
 	/* insert in tree */
@@ -395,13 +390,13 @@ void step(struct List *clist, int c, struct List *nlist)
         listid++;
         nlist->size = 0;
         for (size_t i = 0; i < clist->size; i++) {
-                s = clist->lst[i];
+                s = clist->states[i];
                 if (s->c == c)
                         add_state(nlist, s->out);
         }
 }
 
-static struct List l1;
+struct List l1;
 
 struct DFAState *next_state(struct DFAState *d, int c)
 {
@@ -412,7 +407,7 @@ struct DFAState *next_state(struct DFAState *d, int c)
 int is_match(struct List *l)
 {
         for (size_t i = 0; i < l->size; i++) {
-                if (l->lst[i] == &Match)
+                if (l->states[i] == &Match)
                         return 1;
         }
         return 0;
@@ -436,22 +431,21 @@ int match(struct DFAState *start, char *s)
 
 int match_at(struct DFAState *start, char c, int pos)
 {
+        struct List clist = start->lst;
+        char accept_char;
+
         if (pos == 0) {
-                struct List *clist = &start->lst;
                 struct State *s;
-                char accept_char;
-                for (size_t i = 0; i < clist->size; i++) {
-                        accept_char = clist->lst[i]->c;
+                for (size_t i = 0; i < clist.size; i++) {
+                        accept_char = clist.states[i]->c;
                         if (accept_char == c)
                                 return 1;
                 }
                 return 0;
         }
                 
-        struct List clist = start->lst;
-        char accept_char;
         for (size_t i = 0; i < clist.size; i++) {
-                accept_char = clist.lst[i]->c;
+                accept_char = clist.states[i]->c;
 
                 if (start->next[accept_char] == NULL)
                         start->next[accept_char] = next_state(start, accept_char);
@@ -468,46 +462,56 @@ struct DFAState *start_dfa_state(struct State *start)
 	return dfa_state(start_list(start, &l1));
 }
 
+uint32_t start = 64;
+uint32_t end = 91;
+
 int solve(uint32_t size, char **rows, char **columns, char **solution)
 {
-        //scanf("%d", &size);
-
-        struct DFAState row_states[size];
-        memset(row_states, 0, sizeof(row_states[0]) * size);
-        struct DFAState column_states[size];
-        memset(column_states, 0, sizeof(column_states[0]) * size);
-
         struct DFAState *row_dfas[size];
         struct DFAState *column_dfas[size];
 
-        for (int i = 0; i < size; i++) 
-                row_dfas[i] = start_dfa_state(infix_to_nfa(rows[i]));
-                
-        for (int i = 0; i < size; i++)
-                column_dfas[i] = start_dfa_state(infix_to_nfa(columns[i]));
+        memset(row_dfas, 0, sizeof(row_dfas[0]) * size);
+        memset(column_dfas, 0, sizeof(column_dfas[0]) * size);
 
+        struct State *row_states[size];
+        struct State *column_states[size];
+        for (size_t i = 0; i < size; i++) {
+                row_states[i] = infix_to_nfa(rows[i]);
+                column_states[i] = infix_to_nfa(columns[i]);
+        }
 
-        uint32_t start = 65;
-        uint32_t end = 91;
+        l1.states = malloc(state_count * sizeof l1.states[0]);
+
+        for (size_t i = 0; i < size; i++){
+                row_dfas[i] = start_dfa_state(row_states[i]);
+                column_dfas[i] = start_dfa_state(column_states[i]);
+        }
+        
 
         *solution = malloc(size * size);
         char *result = *solution;
         memset(result, start, size * size);
-
-        for (size_t i = 0; i < size * size; i++) {       // Go through cells
+        
+        for (int i = 0; i < size * size;) {       // Go through cells
                 int r = i / size;
                 int c = i % size;
 
                 bool cell_solved = false;
-                for (size_t z = result[i] + 1; z < end; z++) {
+                for (int z = result[i] + 1; z < end; z++) {
                         char rune = z;
-                        if (match_at(row_dfas[r], z, c) && match_at(column_dfas[c], z, r)) {
+
+                        int row_match = match_at(row_dfas[r], rune, c);
+                        int column_match = match_at(column_dfas[c], rune, r);
+
+                        if (row_match && column_match) {
                                 result[i] = rune;
                                 cell_solved = true;
 
                                 // Check that the whole regex matches
                                 if (c == size - 1) {    // end of row
-                                        char row[(i+1) - (r*size)];
+                                        char row[size + 1];
+                                        row[size] = '\0';
+
                                         memcpy(row, &result[r*size], size);
                                         
                                         if (match(row_dfas[r], row)) {
@@ -519,12 +523,12 @@ int solve(uint32_t size, char **rows, char **columns, char **solution)
                                 }
 
                                 if (r == size - 1) {    // end of column
-                                        char column[(i+1) - (c*size)];
+                                        char column[size];
+                                        column[size] = '\0';
 
-                                        for (size_t j = 0; j < size; j++) {
+                                        for (size_t j = 0; j < size; j++)
                                                 column[j] = result[j*size+c];
-                                        }
-                                        
+
                                         if (match(column_dfas[c], column)) {
                                                 cell_solved = true;
                                         } else {
@@ -533,9 +537,8 @@ int solve(uint32_t size, char **rows, char **columns, char **solution)
                                         }
                                 }
                         }
-                        if (cell_solved) {
+                        if (cell_solved)
                                 break;
-                        }
                 }
                 if (!cell_solved) {
                         result[i] = start;
@@ -553,21 +556,84 @@ int solve(uint32_t size, char **rows, char **columns, char **solution)
 // Split in group (e|f) does not work. I think it reads '|' as a regular character
 int main (int argc, char *argv[])
 {
-        l1.lst = malloc(64 * sizeof(struct State*));
-
         int size = 2;
-        char *rows[] = {"[AB]*", "CA|AB"};
-        char *columns[] = {"BC|AA", "A+"};
+        char *rows[] = {"HE|LL|O+", "[PLEASE]+"};
+        char *columns[] = {"[^SPEAK]+", "EP|IP|EF"};
 
         char *solution;
         solve(size, rows, columns, &solution);
 
-        printf("%s\n", solution);
+        for (size_t i = 0; i < size * size; i++) {
+                printf("%c", solution[i]);
+                if ((i+1) % size == 0)
+                        printf("\n");
+        }
 
+        // struct State *nfa = infix_to_nfa("HE|LL|O+");
+        // struct DFAState *dfa = start_dfa_state(nfa);
+        // printf("%d\n", match_at(dfa, 'H', 0));
+        
 
         // Cleanup
         free(solution);
-        free(l1.lst);
+        free(l1.states);
 
         return 0;
 }
+
+        // int size;
+        // scanf("%d", &size);
+
+        // char *rows[size];
+        // char *columns[size];
+        // char input[100];
+
+        // printf("size: %d\n", size);
+        
+        // for (size_t i = 0; i < size; i++) {
+        //         scanf("%s", input);
+        //         size_t len = strlen(input);
+        //         if (len > 0 && input[len-1] == '\n') {
+        //                 input[len-1] = '\0';
+        //         }
+        //         rows[i] = strdup(input);
+        // }
+                
+        // for (size_t i = 0; i < size; i++) {
+        //         scanf("%s", input);
+        //         size_t len = strlen(input);
+        //         if (len > 0 && input[len-1] == '\n') {
+        //                 input[len-1] = '\0';
+        //         }
+        //         columns[i] = strdup(input);
+        // }
+
+        // // print rows
+        // for (size_t i = 0; i < size; i++)
+        //         printf("row: %s\n", rows[i]);
+
+        // for (size_t i = 0; i < size; i++)
+        //         printf("column: %s\n", columns[i]);
+        
+
+
+        // l1.lst = malloc(state_count * sizeof l1.lst[0]);
+
+        // char *solution;
+        // if (!solve(size, rows, columns, &solution)) {
+        //         printf("No Solution.\n");
+        //         exit(EXIT_FAILURE);
+        // }
+
+        // for (size_t i = 0; i < size * size; i++) {
+        //         printf("%c", solution[i]);
+        //         if ((i+1) % size == 0)
+        //                 printf("\n");
+        // }
+        
+
+        // // Cleanup
+        // free(solution);
+        // free(l1.lst);
+
+        // return 0;
