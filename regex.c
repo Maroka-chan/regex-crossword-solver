@@ -108,8 +108,10 @@ int match_at(struct DFAState *start, char c, int pos)
                 if (start->next[accept_char] == NULL)
                         start->next[accept_char] = next_state(start, accept_char);
 
-                if (start->next[accept_char] != NULL)
-                        return match_at(start->next[accept_char], c, pos - 1);
+                if (start->next[accept_char] != NULL) {
+                        if (match_at(start->next[accept_char], c, pos - 1))
+                                return 1;
+                }
         }
 
         return 0;
@@ -120,14 +122,19 @@ static struct State *infix_to_nfa(char *postfix)
         char *p;
         struct Frag stack[1000], *stackp, e1, e2, e;
         struct State *st;
-
         uint32_t stack_size = 0;
-        bool alternate_index[1000] = {false};
+        stackp = stack;
+
+        struct Frag final_stack[1000], *final_stackp;
+        uint32_t final_stack_size = 0;
+        final_stackp = final_stack;
 
         #define push(s) *stackp++ = s; stack_size++
         #define pop()   *--stackp; stack_size--
 
-        stackp = stack;
+        #define push_final(s) *final_stackp++ = s; final_stack_size++
+        #define pop_final()   *--final_stackp; final_stack_size--
+
         for (p = postfix; *p; p++) {
                 switch (*p) {
                         default:
@@ -209,42 +216,42 @@ static struct State *infix_to_nfa(char *postfix)
                                 patch(e.out, st);
                                 push(frag(e.start, create_ptrlist(&st->out1)));
                         } break;
+                        case '|':
+                        {
+                                while (stack_size > 1) {        // Concatenate the fragments together.
+                                        e2 = pop();
+                                        e1 = pop();
+
+                                        patch(e1.out, e2.start);
+                                        push(frag(e1.start, e2.out));
+                                }
+
+                                e = pop();
+                                push_final(e);
+                        } break;
                 }
         }
-
-        struct Frag alt_frags[1000], *alt_stackp;
-        alt_stackp = alt_frags;
-        int alt_size = 0;
-
-        #define pushalt(s) *alt_stackp++ = s; alt_size++
-        #define popalt()   *--alt_stackp; alt_size--
-
+        
         while (stack_size > 1) {        // Concatenate the fragments together.
                 e2 = pop();
                 e1 = pop();
 
-                if (e1.start->c == '|') {       // If the second fragment is an alternate, push it on the alt stack.
-                        pushalt(e2);
-                        continue;
-                }
-
                 patch(e1.out, e2.start);
                 push(frag(e1.start, e2.out));
         }
-        
-        while (alt_size > 0) {       // Push alternates back to main stack
-                e = popalt();
-                push(e);
-        }
-        
-        while (stack_size > 1) {       // Split the fragments.
-                e2 = pop();
-                e1 = pop();
-                st = state(Split, e1.start, e2.start);
-                push(frag(st, append(e1.out, e2.out)));
-        }
-        
+
         e = pop();
+        push_final(e);
+        
+        while (final_stack_size > 1) {       // Add fragments together with splits.
+                e2 = pop_final();
+                e1 = pop_final();
+                st = state(Split, e1.start, e2.start);
+                
+                push_final(frag(st, append(e1.out, e2.out)));
+        }
+        
+        e = pop_final();
         patch(e.out, &match_state);
         return e.start;
 }
@@ -323,7 +330,6 @@ static void add_state(struct List *state_lst, struct State *s)
 
 static struct List *start_list(struct State *state, struct List *state_lst)
 {
-        // Allocate list here?
         state_lst->size = 0;
         listid++;
         add_state(state_lst, state);

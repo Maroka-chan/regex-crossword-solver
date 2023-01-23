@@ -11,7 +11,7 @@
 // Split in group (e|f) does not work. I think it reads '|' as a regular character
 int main (int argc, char *argv[])
 {
-        // Read input
+        // Parse input
         int size;
         scanf("%d", &size);
 

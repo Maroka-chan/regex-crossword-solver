@@ -28,11 +28,17 @@ struct RegexPuzzle *create_puzzle(uint32_t width, uint32_t height, char **rows, 
         puzzle->row_dfas = malloc(sizeof(DFAState) * height);
         puzzle->column_dfas = malloc(sizeof(DFAState) * width);
 
-        for (size_t i = 0; i < height; i++)
+        for (size_t i = 0; i < height; i++) {
+                printf("row: %s\n", rows[i]);
                 puzzle->row_dfas[i] = *compile_regexp(rows[i]);
+        }
+                
 
-        for (size_t i = 0; i < width; i++)
+        for (size_t i = 0; i < width; i++) {
+                printf("column: %s\n", columns[i]);
                 puzzle->column_dfas[i] = *compile_regexp(columns[i]);
+        }
+                
 
         return puzzle;
 }
@@ -49,9 +55,6 @@ int solve(struct RegexPuzzle *puzzle, char **solution)
         uint32_t width = puzzle->width;
         uint32_t height = puzzle->height;
 
-        DFAState *row_dfas = puzzle->row_dfas;
-        DFAState *column_dfas = puzzle->column_dfas;
-
         uint32_t cell_count = width * height;
 
         *solution = malloc(cell_count);
@@ -59,10 +62,10 @@ int solve(struct RegexPuzzle *puzzle, char **solution)
         memset(result, start_char, cell_count);
         
         for (int i = 0; i < cell_count;) {       // Go through cells
-                int r = i / width;
-                int c = i % width;
-
-                if (!solve_cell(puzzle, r, c, solution)) {     // Backtrack
+                int row = i / width;
+                int column = i % width;
+                
+                if (!solve_cell(puzzle, row, column, solution)) {     // Backtrack
                         result[i] = start_char;
                         i--;
                         if (i < 0)
@@ -77,11 +80,11 @@ int solve(struct RegexPuzzle *puzzle, char **solution)
 
 static int solve_cell(struct RegexPuzzle *puzzle, int row, int column, char **solution)
 {
+        uint32_t width = puzzle->width;
+        uint32_t height = puzzle->height;
+
         DFAState *row_dfas = puzzle->row_dfas;
         DFAState *column_dfas = puzzle->column_dfas;
-
-        int width = puzzle->width;
-        int height = puzzle->height;
 
         char *result = *solution;
 
