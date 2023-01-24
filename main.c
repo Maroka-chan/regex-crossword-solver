@@ -8,14 +8,14 @@
 #include "regex_crossword.h"
 
 
-// Split in group (e|f) does not work. I think it reads '|' as a regular character
 int main (int argc, char *argv[])
 {
         // Parse input
         int size;
         scanf("%d", &size);
 
-        uint32_t height, width = size;
+        uint32_t width = size;
+        uint32_t height = size;
 
         char *rows[height];
         char *columns[width];
