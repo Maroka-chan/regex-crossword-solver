@@ -28,18 +28,12 @@ struct RegexPuzzle *create_puzzle(uint32_t width, uint32_t height, char **rows, 
         puzzle->row_dfas = malloc(sizeof(DFAState) * height);
         puzzle->column_dfas = malloc(sizeof(DFAState) * width);
 
-        for (size_t i = 0; i < height; i++) {
-                printf("row: %s\n", rows[i]);
+        for (size_t i = 0; i < height; i++)
                 puzzle->row_dfas[i] = *compile_regexp(rows[i]);
-        }
                 
-
-        for (size_t i = 0; i < width; i++) {
-                printf("column: %s\n", columns[i]);
+        for (size_t i = 0; i < width; i++)
                 puzzle->column_dfas[i] = *compile_regexp(columns[i]);
-        }
                 
-
         return puzzle;
 }
 
@@ -64,7 +58,7 @@ int solve(struct RegexPuzzle *puzzle, char **solution)
         for (int i = 0; i < cell_count;) {       // Go through cells
                 int row = i / width;
                 int column = i % width;
-                
+
                 if (!solve_cell(puzzle, row, column, solution)) {     // Backtrack
                         result[i] = start_char;
                         i--;
