@@ -143,6 +143,19 @@ static struct State *infix_to_nfa(char *postfix)
                                 push(frag(st, create_ptrlist(&st->out)));
                                 
                         } break;
+                        case '.':
+                        {
+                                struct State *split_state = state(start_char, NULL, NULL);
+                                union Ptrlist *outs = create_ptrlist(&split_state->out);
+
+                                for (size_t i = start_char + 1; i < end_char; i++) {
+                                        st = state(i, NULL, NULL);
+                                        split_state = state(Split, st, split_state);
+                                        outs = append(create_ptrlist(&st->out), outs);
+                                }
+
+                                push(frag(split_state, outs));
+                        } break;
                         case ')':
                         {
                                 e2 = pop();
@@ -167,8 +180,6 @@ static struct State *infix_to_nfa(char *postfix)
                                                 group_chars[*p] = *p;
 
                                         for (size_t i = start_char; i < end_char; i++) {
-                                                if (i == '[' || i == ']' || i == '^' || i == '|' || i == '(' || i == ')' || i == '*' || i == '+' || i == '?' || i == '.')
-                                                        continue;
                                                 if (group_chars[i] == '\0') {
                                                         st = state(i, NULL, NULL);
                                                         push(frag(st, create_ptrlist(&st->out)));
