@@ -35,13 +35,11 @@ LP
 
 # Limitations
 - No support for four-sided puzzles
-- Can currently only parse square puzzles
 - Currently only tries to solve puzzles using capital letters
 - Only parses a limited subset of regex features
-  - Does not support any character (.), character escapes, ranges etc.
-
-# Problems
+  - Does not support character escapes, ranges etc.
 - Alternation does not work when inside of parentheses
+
 
 # Resources Used
 https://swtch.com/~rsc/regexp/regexp1.html
